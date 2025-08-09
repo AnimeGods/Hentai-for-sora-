@@ -1,0 +1,196 @@
+// Check if Hanime API is up
+async function areRequiredServersUp() {
+    const hanimeApiUrl = 'https://hanime.tv/api/v8/search';
+
+    try {
+        let response = await soraFetch(hanimeApiUrl, { method: 'HEAD' });
+        if (!response || response.status !== 200) {
+            response = await soraFetch(hanimeApiUrl, { method: 'GET' });
+        }
+        if (response && response.status === 200) {
+            return { success: true, error: null };
+        } else {
+            return { success: false, error: `Hanime API returned status ${response?.status}`, searchTitle: `Error: Hanime API server down.` };
+        }
+    } catch (error) {
+        console.log('[HANIME] API check failed:', error.message);
+        return { success: false, error: 'Hanime API not reachable', searchTitle: `Error: Cannot reach Hanime API.` };
+    }
+}
+
+// Sora fetch wrapper
+async function soraFetch(url, options = { headers: {}, method: 'GET', body: null }) {
+    try {
+        return await fetch(url, options);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Search Hanime by keyword
+async function searchResults(keyword) {
+    const API_BASE = 'https://hanime.tv/api/v8/search';
+    const HOST_BASE = 'https://hanime.tv';
+
+    const serversUp = await areRequiredServersUp();
+    if (!serversUp.success) {
+        return JSON.stringify([{
+            title: serversUp.searchTitle,
+            image: 'https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/sora_host_down.png',
+            href: '#' + encodeURIComponent(serversUp.error),
+        }]);
+    }
+
+    try {
+        const url = `${API_BASE}?query=${encodeURIComponent(keyword)}&page=1`;
+        const response = await soraFetch(url);
+        if (!response || response.status !== 200) throw new Error('No response or bad status from Hanime API');
+
+        const data = await response.json();
+
+        if (!data || !data.data || data.data.length === 0) {
+            throw new Error('No results found');
+        }
+
+        // Format results for Sora: title, image, href (custom encoded string for details)
+        const results = data.data.map(item => {
+            return {
+                title: item.title,
+                image: item.thumb,
+                href: `${HOST_BASE}/videos/${item.id}|hanime|${item.id}|${HOST_BASE}/api/v8/video/${item.id}|${HOST_BASE}/api/v8/video/${item.id}/episodes`
+            };
+        });
+
+        return JSON.stringify(results);
+
+    } catch (error) {
+        console.log('[HANIME][searchResults] error:', error.message);
+        return JSON.stringify([]);
+    }
+}
+
+// Extract details (description, tags, release date)
+async function extractDetails(objString) {
+    if (objString.startsWith('#')) {
+        return JSON.stringify([{
+            description: decodeURIComponent(objString.slice(1)) + ' Please try again later.',
+            aliases: '',
+            airdate: ''
+        }]);
+    }
+
+    const delimiter = '|';
+    const [url, origin, id, detailsUrl, episodesUrl] = objString.split(delimiter);
+
+    try {
+        const response = await soraFetch(detailsUrl);
+        if (!response || response.status !== 200) throw new Error('Failed to get video details');
+
+        const data = await response.json();
+
+        if (!data || !data.data) throw new Error('Invalid data in video details');
+
+        const video = data.data;
+
+        const description = video.description || '';
+        const aliases = (video.tags || []).map(t => t.name).join(', ');
+        const airdate = video.release_date || '';
+
+        return JSON.stringify([{
+            description,
+            aliases,
+            airdate
+        }]);
+
+    } catch (error) {
+        console.log('[HANIME][extractDetails] error:', error.message);
+        return JSON.stringify([{
+            description: 'Error loading description',
+            aliases: 'Tags: Unknown',
+            airdate: 'Release date: Unknown'
+        }]);
+    }
+}
+
+// Extract episodes (Hanime videos usually don't have traditional episodes, but if present, list them)
+async function extractEpisodes(objString) {
+    const delimiter = '|';
+    const [url, origin, id, detailsUrl, episodesUrl] = objString.split(delimiter);
+
+    try {
+        const response = await soraFetch(episodesUrl);
+        if (!response || response.status !== 200) throw new Error('Failed to get episodes');
+
+        const data = await response.json();
+
+        if (!data || !data.data || data.data.length === 0) {
+            // If no episodes, return main video as single episode
+            return JSON.stringify([{
+                href: `${url}|${id}`, // Use same url/id for streaming
+                number: 1
+            }]);
+        }
+
+        // Map episodes to Sora format
+        const episodes = data.data.map(ep => ({
+            href: `${url}|${id}|${ep.id}`,
+            number: ep.episode_number || ep.id
+        }));
+
+        return JSON.stringify(episodes);
+
+    } catch (error) {
+        console.log('[HANIME][extractEpisodes] error:', error.message);
+        // Return single episode fallback
+        return JSON.stringify([{
+            href: `${url}|${id}`,
+            number: 1
+        }]);
+    }
+}
+
+// Extract streaming URL
+async function extractStreamUrl(objString) {
+    const delimiter = '|';
+    const parts = objString.split(delimiter);
+    let url, id, episodeId;
+
+    if (parts.length === 3) {
+        [url, id, episodeId] = parts;
+    } else if (parts.length === 2) {
+        [url, id] = parts;
+        episodeId = null;
+    } else {
+        return JSON.stringify({ stream: null, subtitles: null });
+    }
+
+    try {
+        // For Hanime, stream URL is obtained from video endpoint or episode endpoint
+        const videoApi = episodeId
+            ? `https://hanime.tv/api/v8/video/stream/${episodeId}`
+            : `https://hanime.tv/api/v8/video/stream/${id}`;
+
+        const response = await soraFetch(videoApi);
+        if (!response || response.status !== 200) throw new Error('Failed to get stream info');
+
+        const data = await response.json();
+        if (!data || !data.data) throw new Error('No stream data');
+
+        // Usually streams have multiple qualities, pick the best or first hls/mp4
+        let streamUrl = null;
+        for (let source of data.data.sources || []) {
+            if (source.type === 'hls' || source.type === 'mp4') {
+                streamUrl = source.file;
+                break;
+            }
+        }
+
+        if (!streamUrl) throw new Error('No valid stream URL found');
+
+        return JSON.stringify({ stream: streamUrl, subtitles: null });
+
+    } catch (error) {
+        console.log('[HANIME][extractStreamUrl] error:', error.message);
+        return JSON.stringify({ stream: null, subtitles: null });
+    }
+}
