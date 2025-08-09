@@ -1,0 +1,20 @@
+{
+  "sourceName": "Hanime (JP Audio, EN SUB)",
+  "iconUrl": "https://hanime.tv/favicon.ico",
+  "author": {
+    "name": "ShadeOfChaos",
+    "icon": "https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/ofchaos.jpg",
+    "url": "https://hanime.tv"
+  },
+  "version": "1.0.0",
+  "language": "Japanese (SUB)",
+  "streamType": "HLS",
+  "quality": "1080p",
+  "type": "anime",
+  "baseUrl": "https://hanime.tv",
+  "searchBaseUrl": "https://hanime.tv/api/v8/search",
+  "scriptUrl": "https://raw.githubusercontent.com/your-username/your-repo/main/hanime.js",
+  "asyncJS": true,
+  "streamAsyncJS": true,
+  "softsub": true
+}
