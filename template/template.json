@@ -1,0 +1,19 @@
+{
+  "sourceName": "Hanime.tv (JP Audio + ENG Sub)",
+  "iconUrl": "https://hanime.tv/favicon.ico",
+  "author": {
+    "name": "YourName",
+    "icon": "https://hanime.tv/favicon.ico",
+    "url": "https://hanime.tv"
+  },
+  "version": "1.0.0",
+  "language": "Japanese (SUB)",
+  "streamType": "HLS",
+  "quality": "1080p",
+  "type": "anime",
+  "baseUrl": "https://hanime.tv",
+  "searchBaseUrl": "https://hanime.tv/api/v8/search?keyword=",
+  "scriptUrl": "https://yourdomain.com/path/to/HanimeModule.js",
+  "asyncJS": true,
+  "streamAsyncJS": true
+}
